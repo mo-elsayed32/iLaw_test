@@ -31,11 +31,30 @@ const SYSTEM_PROMPT = `
 توضيح مهني مختصر + درجة يقين التحليل.
 `
 
-// 🧠 تحميل ملف القانون
+// 🧠 تحميل كل ملفات القانون من المجلد
 function loadLegalData() {
-  const filePath = path.join(process.cwd(), 'data', 'civil_code.json')
-  const file = fs.readFileSync(filePath, 'utf-8')
-  return JSON.parse(file)
+  const dirPath = path.join(process.cwd(), 'data', 'civil_code')
+
+  const files = fs.readdirSync(dirPath)
+
+  let allDocs: any[] = []
+
+  for (const file of files) {
+    const filePath = path.join(dirPath, file)
+    const content = fs.readFileSync(filePath, 'utf-8')
+
+    try {
+      const json = JSON.parse(content)
+
+      if (Array.isArray(json)) {
+        allDocs = allDocs.concat(json)
+      }
+    } catch (err) {
+      console.warn(`Skipping invalid JSON file: ${file}`)
+    }
+  }
+
+  return allDocs
 }
 
 // 🔍 تحسين البحث (Exact + Loose)
@@ -74,7 +93,7 @@ export async function POST(req: NextRequest) {
 
     const lastMessage = messages[messages.length - 1]?.content || ''
 
-    // 📚 تحميل البيانات
+    // 📚 تحميل البيانات من كل الملفات
     const legalDocs = loadLegalData()
 
     // 🔍 البحث
@@ -82,7 +101,6 @@ export async function POST(req: NextRequest) {
 
     // 🧠 اختيار السياق
     let selectedDocs: any[] = []
-
     let mode: 'exact' | 'loose' | 'fallback' = 'fallback'
 
     if (exactMatches.length > 0) {
