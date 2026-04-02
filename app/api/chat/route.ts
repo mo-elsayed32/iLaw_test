@@ -12,20 +12,23 @@ const SYSTEM_PROMPT = `
 
 ⚖️ قواعد صارمة:
 - ممنوع اختلاق أي مواد قانونية أو أحكام قضائية.
-- يجب الاعتماد فقط على النصوص القانونية المتوفرة لك في السياق.
-- إذا لم تجد إجابة في النصوص: قل "لا توجد مادة قانونية داعمة في قاعدة البيانات".
-- لا تقدم أي معلومة غير موجودة في النصوص.
+- يجب الاعتماد فقط على النصوص القانونية المتوفرة في السياق.
+- إذا لم توجد مادة مباشرة: لا تتوقف عن الإجابة، بل وضّح الإطار القانوني الأقرب بشرط عدم اختلاق مواد.
+- لا تقدم أي معلومة غير مدعومة بالنصوص أو القواعد العامة المستقرة.
 
 📌 أسلوب الإجابة:
 
 **الإجابة:**
-تحليل قانوني مبني فقط على النصوص المتاحة.
+تحليل قانوني دقيق.
+
+**الإطار القانوني:**
+حدد ما إذا كان هناك نص مباشر أو قواعد عامة فقط.
 
 **المواد القانونية:**
-اذكر فقط المواد الموجودة في النص.
+اذكر فقط المواد الموجودة في السياق.
 
 **ملاحظة للمحامي:**
-تنبيه عملي بدون أي إضافة غير موجودة في المصدر.
+توضيح مهني مختصر + درجة يقين التحليل.
 `
 
 // 🧠 تحميل ملف القانون
@@ -33,6 +36,28 @@ function loadLegalData() {
   const filePath = path.join(process.cwd(), 'data', 'civil_code.json')
   const file = fs.readFileSync(filePath, 'utf-8')
   return JSON.parse(file)
+}
+
+// 🔍 تحسين البحث (Exact + Loose)
+function searchDocs(docs: any[], query: string) {
+  const q = query.toLowerCase()
+
+  const exactMatches = docs.filter((doc: any) =>
+    doc.text.toLowerCase().includes(q) ||
+    String(doc.id) === q
+  )
+
+  const looseMatches = docs.filter((doc: any) => {
+    const text = doc.text.toLowerCase()
+    const keywords = q.split(' ').filter(Boolean)
+
+    return keywords.some((k: string) => text.includes(k))
+  })
+
+  return {
+    exactMatches,
+    looseMatches,
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -47,33 +72,43 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // 🧠 آخر سؤال من المستخدم
     const lastMessage = messages[messages.length - 1]?.content || ''
 
-    // 📚 تحميل القانون
+    // 📚 تحميل البيانات
     const legalDocs = loadLegalData()
 
-    const query = lastMessage.toLowerCase()
+    // 🔍 البحث
+    const { exactMatches, looseMatches } = searchDocs(legalDocs, lastMessage)
 
-const filteredDocs = legalDocs.filter((doc: any) =>
-  doc.text.toLowerCase().includes(query) ||
-  query.includes(String(doc.id))
-)
+    // 🧠 اختيار السياق
+    let selectedDocs: any[] = []
 
-// لو مفيش نتائج، خد أهم مواد (fallback)
-const selectedDocs =
-  filteredDocs.length > 0 ? filteredDocs : legalDocs.slice(0, 3)
+    let mode: 'exact' | 'loose' | 'fallback' = 'fallback'
 
-const context = selectedDocs
-  .map((doc: any) => `المادة ${doc.id}: ${doc.text}`)
-  .join('\n')
+    if (exactMatches.length > 0) {
+      selectedDocs = exactMatches
+      mode = 'exact'
+    } else if (looseMatches.length > 0) {
+      selectedDocs = looseMatches.slice(0, 5)
+      mode = 'loose'
+    } else {
+      selectedDocs = legalDocs.slice(0, 3)
+      mode = 'fallback'
+    }
+
+    const context = selectedDocs
+      .map((doc: any) => `المادة ${doc.id}: ${doc.text}`)
+      .join('\n')
 
     const completion = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
       messages: [
         {
           role: 'system',
-          content: `${SYSTEM_PROMPT}
+          content: `
+${SYSTEM_PROMPT}
+
+📊 وضع الاسترجاع الحالي: ${mode.toUpperCase()}
 
 📚 النصوص القانونية المتاحة:
 ${context}
@@ -94,6 +129,7 @@ ${context}
 
     return NextResponse.json({
       content,
+      mode,
       success: true,
     })
   } catch (error: any) {
