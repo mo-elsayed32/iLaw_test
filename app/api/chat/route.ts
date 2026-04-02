@@ -53,9 +53,20 @@ export async function POST(req: NextRequest) {
     // 📚 تحميل القانون
     const legalDocs = loadLegalData()
 
-    const context = legalDocs
-      .map((doc: any) => `المادة ${doc.id}: ${doc.text}`)
-      .join('\n')
+    const query = lastMessage.toLowerCase()
+
+const filteredDocs = legalDocs.filter((doc: any) =>
+  doc.text.toLowerCase().includes(query) ||
+  query.includes(String(doc.id))
+)
+
+// لو مفيش نتائج، خد أهم مواد (fallback)
+const selectedDocs =
+  filteredDocs.length > 0 ? filteredDocs : legalDocs.slice(0, 3)
+
+const context = selectedDocs
+  .map((doc: any) => `المادة ${doc.id}: ${doc.text}`)
+  .join('\n')
 
     const completion = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
