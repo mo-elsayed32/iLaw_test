@@ -24,7 +24,7 @@ const SYSTEM_PROMPT = `
 `
 
 function loadLegalData() {
-  const filePath = path.join(process.cwd(), 'data', 'civil_code', '01_core.json')
+  const filePath = path.join(process.cwd(), 'data', 'civil_code', 'civil_full.json')
   const file = fs.readFileSync(filePath, 'utf-8')
   return JSON.parse(file)
 }
