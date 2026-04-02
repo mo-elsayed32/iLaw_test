@@ -4,27 +4,23 @@ import fs from 'fs'
 import path from 'path'
 
 const SYSTEM_PROMPT = `
-أنت مساعد قانوني متخصص في القانون المدني المصري وتعمل ضمن منصة iLaw للمحامين فقط.
+أنت مساعد قانوني متخصص في القانون المدني المصري، تعمل ضمن منصة iLaw للمحامين.
 
-⚖️ قواعد صارمة:
+قواعد صارمة:
 - ممنوع اختلاق أي مواد قانونية أو أحكام قضائية.
-- يجب الاعتماد فقط على النصوص القانونية المتوفرة في السياق.
-- إذا لم توجد مادة مباشرة: لا تتوقف عن الإجابة، بل وضّح الإطار القانوني الأقرب بشرط عدم اختلاق مواد.
-- لا تقدم أي معلومة غير مدعومة بالنصوص أو القواعد العامة المستقرة.
+- اعتمد فقط على النصوص الموجودة في السياق.
+- إذا لم توجد مادة مباشرة: أجب بالإطار القانوني الأقرب دون اختلاق.
 
-📌 أسلوب الإجابة:
+طريقة الرد:
 
 **الإجابة:**
-تحليل قانوني دقيق.
-
-**الإطار القانوني:**
-حدد ما إذا كان هناك نص مباشر أو قواعد عامة فقط.
+[تحليل قانوني مباشر وموجز — بدون مقدمات]
 
 **المواد القانونية:**
-اذكر فقط المواد الموجودة في السياق.
+[فقط المواد الموجودة في السياق — إن وجدت]
 
 **ملاحظة للمحامي:**
-توضيح مهني مختصر + درجة يقين التحليل.
+[اكتبها فقط إذا كان هناك استثناء أو خطر فعلي يجب التنبيه عليه — وإلا اتركها فارغة تماماً]
 `
 
 function loadLegalData() {
@@ -44,7 +40,6 @@ function searchDocs(docs: any[], query: string) {
   const looseMatches = docs.filter((doc: any) => {
     const text = doc.text.toLowerCase()
     const keywords = q.split(' ').filter(Boolean)
-
     return keywords.some((k: string) => text.includes(k))
   })
 
@@ -62,7 +57,6 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // ✅ إنشاء Groq هنا (مش بره)
     const groq = new Groq({ apiKey })
 
     const body = await req.json()
@@ -103,14 +97,7 @@ export async function POST(req: NextRequest) {
       messages: [
         {
           role: 'system',
-          content: `
-${SYSTEM_PROMPT}
-
-📊 وضع الاسترجاع الحالي: ${mode.toUpperCase()}
-
-📚 النصوص القانونية المتاحة:
-${context}
-          `.trim(),
+          content: `${SYSTEM_PROMPT}\n\n📚 النصوص المتاحة:\n${context}`,
         },
         {
           role: 'user',
@@ -118,28 +105,21 @@ ${context}
         },
       ],
       temperature: 0.2,
-      max_tokens: 1200,
+      max_tokens: 1000,
     })
 
     const content =
       completion.choices?.[0]?.message?.content?.trim() ||
       'لم يتم الحصول على رد.'
 
-    return NextResponse.json({
-      content,
-      mode,
-      success: true,
-    })
+    return NextResponse.json({ content, mode, success: true })
+
   } catch (error: any) {
     console.error('Groq API Error:', error)
-
     return NextResponse.json(
       {
         error: 'حدث خطأ في الاتصال بالذكاء الاصطناعي',
-        details:
-          process.env.NODE_ENV === 'development'
-            ? error?.message
-            : undefined,
+        details: process.env.NODE_ENV === 'development' ? error?.message : undefined,
       },
       { status: 500 }
     )
