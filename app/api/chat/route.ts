@@ -3,10 +3,6 @@ import Groq from 'groq-sdk'
 import fs from 'fs'
 import path from 'path'
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-})
-
 const SYSTEM_PROMPT = `
 أنت مساعد قانوني متخصص في القانون المدني المصري وتعمل ضمن منصة iLaw للمحامين فقط.
 
@@ -31,33 +27,12 @@ const SYSTEM_PROMPT = `
 توضيح مهني مختصر + درجة يقين التحليل.
 `
 
-// 🧠 تحميل كل ملفات القانون من المجلد
 function loadLegalData() {
-  const dirPath = path.join(process.cwd(), 'data', 'civil_code')
-
-  const files = fs.readdirSync(dirPath)
-
-  let allDocs: any[] = []
-
-  for (const file of files) {
-    const filePath = path.join(dirPath, file)
-    const content = fs.readFileSync(filePath, 'utf-8')
-
-    try {
-      const json = JSON.parse(content)
-
-      if (Array.isArray(json)) {
-        allDocs = allDocs.concat(json)
-      }
-    } catch (err) {
-      console.warn(`Skipping invalid JSON file: ${file}`)
-    }
-  }
-
-  return allDocs
+  const filePath = path.join(process.cwd(), 'data', 'civil_code.json')
+  const file = fs.readFileSync(filePath, 'utf-8')
+  return JSON.parse(file)
 }
 
-// 🔍 تحسين البحث (Exact + Loose)
 function searchDocs(docs: any[], query: string) {
   const q = query.toLowerCase()
 
@@ -73,14 +48,23 @@ function searchDocs(docs: any[], query: string) {
     return keywords.some((k: string) => text.includes(k))
   })
 
-  return {
-    exactMatches,
-    looseMatches,
-  }
+  return { exactMatches, looseMatches }
 }
 
 export async function POST(req: NextRequest) {
   try {
+    const apiKey = process.env.GROQ_API_KEY
+
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: 'GROQ_API_KEY غير موجود' },
+        { status: 500 }
+      )
+    }
+
+    // ✅ إنشاء Groq هنا (مش بره)
+    const groq = new Groq({ apiKey })
+
     const body = await req.json()
     const messages = body?.messages
 
@@ -93,13 +77,9 @@ export async function POST(req: NextRequest) {
 
     const lastMessage = messages[messages.length - 1]?.content || ''
 
-    // 📚 تحميل البيانات من كل الملفات
     const legalDocs = loadLegalData()
-
-    // 🔍 البحث
     const { exactMatches, looseMatches } = searchDocs(legalDocs, lastMessage)
 
-    // 🧠 اختيار السياق
     let selectedDocs: any[] = []
     let mode: 'exact' | 'loose' | 'fallback' = 'fallback'
 
