@@ -4,12 +4,7 @@ import { useState } from 'react'
 import Sidebar from '@/components/Sidebar'
 import ChatWindow from '@/components/ChatWindow'
 import InputBox from '@/components/InputBox'
-
-export type Message = {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-}
+import type { Message } from '@/types/chat'
 
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([])
@@ -42,6 +37,7 @@ export default function Home() {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: data.content,
+        sources: data.sources ?? [],
       }
 
       setMessages((prev) => [...prev, aiMsg])
@@ -68,6 +64,7 @@ export default function Home() {
           dark={dark}
           setDark={setDark}
         />
+
         <div className="flex flex-col flex-1 overflow-hidden">
           <button
             onClick={() => setSidebarOpen(true)}
@@ -75,6 +72,7 @@ export default function Home() {
           >
             ☰
           </button>
+
           <ChatWindow messages={messages} loading={loading} />
           <InputBox onSend={sendMessage} loading={loading} />
         </div>
