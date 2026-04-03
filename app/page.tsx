@@ -21,7 +21,7 @@ export default function Home() {
       content: text,
     }
 
-    setMessages((prev) => [...prev, userMsg])
+    setMessages(prev => [...prev, userMsg])
     setLoading(true)
 
     try {
@@ -40,9 +40,9 @@ export default function Home() {
         sources: data.sources ?? [],
       }
 
-      setMessages((prev) => [...prev, aiMsg])
+      setMessages(prev => [...prev, aiMsg])
     } catch {
-      setMessages((prev) => [
+      setMessages(prev => [
         ...prev,
         {
           id: (Date.now() + 1).toString(),
