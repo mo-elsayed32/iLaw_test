@@ -1,5 +1,3 @@
-// lib/types/legal.ts
-
 export interface LegalResponse {
   answer: string
   legalSources: number[]
