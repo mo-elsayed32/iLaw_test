@@ -1,19 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Message } from '@/types/chat'
+import type { LegalResponse } from '@/lib/types/legal'
 
 type Props = {
   messages: Message[]
   loading: boolean
-}
-
-interface LegalResponse {
-  answer: string
-  legalSources: number[]
-  confidence: {
-    level: 'high' | 'medium' | 'low'
-    reason: string
-  }
-  note: string | null
 }
 
 // ── SAFE JSON PARSER (FIXED) ─────────────────────────────
