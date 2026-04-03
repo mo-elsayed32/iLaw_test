@@ -21,23 +21,28 @@ export default function Home() {
       content: text,
     }
 
-    setMessages(prev => [...prev, userMsg])
+    const updatedMessages = [...messages, userMsg]
+
+    setMessages(updatedMessages)
     setLoading(true)
 
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [...messages, userMsg] }),
+        body: JSON.stringify({ messages: updatedMessages }),
       })
 
-      const data = await res.json()
+      const resData = await res.json()
+
+      // 🧠 حماية من undefined
+      const structured = resData?.data
 
       const aiMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: data.content,
-        sources: data.sources ?? [],
+        content: structured ? JSON.stringify(structured) : '',
+        sources: resData.sources ?? [],
       }
 
       setMessages(prev => [...prev, aiMsg])
