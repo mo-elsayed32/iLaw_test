@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Message } from '@/app/page'
+import { Message } from '@/types/chat'
 
 type Props = {
   messages: Message[]
