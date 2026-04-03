@@ -4,59 +4,84 @@ import fs from 'fs'
 import path from 'path'
 
 const SYSTEM_PROMPT = `
-أنت مساعد قانوني متخصص في القانون المدني المصري، تعمل ضمن منصة iLaw للمحامين.
+أنت مساعد قانوني متخصص في القانون المدني المصري.
 
-قواعد صارمة:
-- ممنوع اختلاق أي مواد قانونية أو أحكام قضائية.
-- اعتمد فقط على النصوص الموجودة في السياق.
-- إذا لم توجد مادة مباشرة: أجب بالإطار القانوني الأقرب دون اختلاق.
+مهمتك: تحليل السؤال القانوني اعتماداً فقط على النصوص المرفقة.
 
-طريقة الرد — اتبع هذا الهيكل حرفياً:
+قواعد أساسية:
+1. استخدم النصوص المرفقة فقط كمصدر قانوني.
+2. إذا كانت النصوص غير كافية، صرّح بذلك بوضوح ولا تكمل استنتاجات قانونية حاسمة.
+3. يمكنك تقديم تحليل قانوني منطقي فقط إذا كان مدعوماً جزئياً بالنصوص.
+4. لا تختلق مواد قانونية أو أرقام مواد.
 
-**الإجابة:**
-[تحليل قانوني مباشر وموجز]
+أسلوب الإجابة:
+- تحليل قانوني مباشر وواضح.
+- ذكر المواد ذات الصلة فقط إذا كانت موجودة فعلاً.
+- تحديد درجة الثقة بناءً على وضوح النصوص.
 
-**المواد القانونية:**
-[فقط المواد الموجودة في السياق المرفق — اذكر رقمها ونصها]
+مقياس الثقة:
+- عالية: النص صريح ومباشر
+- متوسطة: استنتاج مدعوم جزئياً
+- منخفضة: النصوص غير كافية لكن يوجد إطار عام
 
-**درجة الثقة:**
-[عالية / متوسطة / منخفضة] — [سبب مختصر جداً: مثلاً "نص صريح في المادة 163" أو "استنتاج من مبادئ عامة"]
-
-**ملاحظة للمحامي:**
-[اكتبها فقط إذا كان هناك استثناء أو خطر فعلي — وإلا اكتب: لا توجد]
+مهم جداً:
+إذا لم توجد نصوص كافية →
+قل حرفياً: "لا توجد نصوص قانونية كافية ضمن قاعدة البيانات الحالية للإجابة الدقيقة"
 `
 
 let cachedDocs: any[] | null = null
 
 function loadLegalData() {
   if (cachedDocs) return cachedDocs
-  const filePath = path.join(process.cwd(), 'data', 'civil_code', 'civil_full.json')
+
+  const filePath = path.join(
+    process.cwd(),
+    'data',
+    'civil_code',
+    'civil_full.json'
+  )
+
   const file = fs.readFileSync(filePath, 'utf-8')
   cachedDocs = JSON.parse(file)
+
   return cachedDocs
 }
 
 function extractArticleNumbers(query: string): number[] {
   const numbers: number[] = []
 
-  // أرقام إنجليزية: "المادة 105" أو "مادة 105"
   const enMatches = query.matchAll(/مادة\s*(\d+)/g)
-  for (const m of enMatches) numbers.push(parseInt(m[1]))
-
-  // أرقام عربية: "المادة ١٠٥"
-  const arMap: Record<string, string> = {
-    '٠':'0','١':'1','٢':'2','٣':'3','٤':'4',
-    '٥':'5','٦':'6','٧':'7','٨':'8','٩':'9'
+  for (const m of enMatches) {
+    numbers.push(parseInt(m[1]))
   }
+
+  const arMap: Record<string, string> = {
+    '٠': '0',
+    '١': '1',
+    '٢': '2',
+    '٣': '3',
+    '٤': '4',
+    '٥': '5',
+    '٦': '6',
+    '٧': '7',
+    '٨': '8',
+    '٩': '9',
+  }
+
   const arMatches = query.matchAll(/مادة\s*([٠-٩]+)/g)
   for (const m of arMatches) {
-    const converted = m[1].split('').map(c => arMap[c] || c).join('')
+    const converted = m[1]
+      .split('')
+      .map((c) => arMap[c] || c)
+      .join('')
+
     numbers.push(parseInt(converted))
   }
 
-  // أرقام مجردة مع سياق: "105 مدني" أو "م. 105"
   const shortMatches = query.matchAll(/م[.\s]+(\d+)/g)
-  for (const m of shortMatches) numbers.push(parseInt(m[1]))
+  for (const m of shortMatches) {
+    numbers.push(parseInt(m[1]))
+  }
 
   return [...new Set(numbers)]
 }
@@ -64,79 +89,116 @@ function extractArticleNumbers(query: string): number[] {
 function searchDocs(docs: any[], query: string) {
   const q = query.toLowerCase()
 
-  // ١. بحث برقم المادة مباشرة
+  // 1. Article ID search (highest priority)
   const articleNums = extractArticleNumbers(query)
   if (articleNums.length > 0) {
-    const byId = docs.filter(doc => articleNums.includes(doc.id))
-    if (byId.length > 0) return { matches: byId, mode: 'by_id' as const }
+    const byId = docs.filter((doc) => articleNums.includes(doc.id))
+    if (byId.length > 0) {
+      return { matches: byId, mode: 'by_id' as const }
+    }
   }
 
-  // ٢. بحث بالكلمات المفتاحية
-  const keywords = docs.filter(doc =>
+  // 2. Keyword search
+  const keywords = docs.filter((doc) =>
     doc.keywords?.some((kw: string) => q.includes(kw))
   )
-  if (keywords.length > 0) return { matches: keywords.slice(0, 6), mode: 'keyword' as const }
 
-  // ٣. بحث نصي
-  const words = q.split(' ').filter(w => w.length > 3)
-  const textMatch = docs.filter(doc => {
+  if (keywords.length > 0) {
+    return { matches: keywords.slice(0, 6), mode: 'keyword' as const }
+  }
+
+  // 3. Text search fallback
+  const words = q.split(' ').filter((w) => w.length > 3)
+
+  const textMatch = docs.filter((doc) => {
     const text = doc.text.toLowerCase()
-    return words.some(w => text.includes(w))
+    return words.some((w) => text.includes(w))
   })
-  if (textMatch.length > 0) return { matches: textMatch.slice(0, 5), mode: 'text' as const }
 
-  // ٤. fallback
+  if (textMatch.length > 0) {
+    return { matches: textMatch.slice(0, 5), mode: 'text' as const }
+  }
+
+  // 4. Last fallback
   return { matches: docs.slice(0, 3), mode: 'fallback' as const }
 }
 
 export async function POST(req: NextRequest) {
   try {
     const apiKey = process.env.GROQ_API_KEY
+
     if (!apiKey) {
-      return NextResponse.json({ error: 'GROQ_API_KEY غير موجود' }, { status: 500 })
+      return NextResponse.json(
+        { error: 'GROQ_API_KEY غير موجود' },
+        { status: 500 }
+      )
     }
 
-    const groq = new Groq({ apiKey })
     const body = await req.json()
     const messages = body?.messages
 
     if (!Array.isArray(messages) || messages.length === 0) {
-      return NextResponse.json({ error: 'لا توجد رسائل صالحة' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'لا توجد رسائل صالحة' },
+        { status: 400 }
+      )
     }
 
     const lastMessage = messages[messages.length - 1]?.content || ''
+
     const legalDocs = loadLegalData()
     const { matches, mode } = searchDocs(legalDocs!, lastMessage)
 
     const context = matches
-      .map((doc: any) => `المادة ${doc.id}: ${doc.text}`)
-      .join('\n\n')
+      .map((doc: any) => {
+        return `ID: ${doc.id}\nTEXT: ${doc.text}`
+      })
+      .join('\n\n---\n\n')
+
+    const groq = new Groq({ apiKey })
 
     const completion = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
+      temperature: 0.2,
+      max_tokens: 1200,
       messages: [
         {
           role: 'system',
-          content: `${SYSTEM_PROMPT}\n\n📚 النصوص القانونية المتاحة:\n${context}`,
+          content: `${SYSTEM_PROMPT}
+
+📚 النصوص القانونية المتاحة:
+${context}
+          `,
         },
-        { role: 'user', content: lastMessage },
+        {
+          role: 'user',
+          content: lastMessage,
+        },
       ],
-      temperature: 0.2,
-      max_tokens: 1000,
     })
 
     const content =
       completion.choices?.[0]?.message?.content?.trim() ||
       'لم يتم الحصول على رد.'
 
-    return NextResponse.json({ content, mode, success: true })
-
+    return NextResponse.json({
+      content,
+      mode,
+      sources: matches.map((m) => ({
+        id: m.id,
+      })),
+      success: true,
+    })
   } catch (error: any) {
     console.error('Groq API Error:', error)
+
     return NextResponse.json(
       {
         error: 'حدث خطأ في الاتصال بالذكاء الاصطناعي',
-        details: process.env.NODE_ENV === 'development' ? error?.message : undefined,
+        details:
+          process.env.NODE_ENV === 'development'
+            ? error?.message
+            : undefined,
       },
       { status: 500 }
     )
