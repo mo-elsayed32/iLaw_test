@@ -10,23 +10,13 @@ const SYSTEM_PROMPT = `
 
 قواعد أساسية:
 1. استخدم النصوص المرفقة فقط كمصدر قانوني.
-2. إذا كانت النصوص غير كافية، صرّح بذلك بوضوح ولا تكمل استنتاجات قانونية حاسمة.
-3. يمكنك تقديم تحليل قانوني منطقي فقط إذا كان مدعوماً جزئياً بالنصوص.
-4. لا تختلق مواد قانونية أو أرقام مواد.
-
-أسلوب الإجابة:
-- تحليل قانوني مباشر وواضح.
-- ذكر المواد ذات الصلة فقط إذا كانت موجودة فعلاً.
-- تحديد درجة الثقة بناءً على وضوح النصوص.
+2. إذا كانت النصوص غير كافية، صرّح بذلك بوضوح.
+3. لا تختلق مواد قانونية أو أرقام مواد.
 
 مقياس الثقة:
-- عالية: النص صريح ومباشر
-- متوسطة: استنتاج مدعوم جزئياً
-- منخفضة: النصوص غير كافية لكن يوجد إطار عام
-
-مهم جداً:
-إذا لم توجد نصوص كافية →
-قل حرفياً: "لا توجد نصوص قانونية كافية ضمن قاعدة البيانات الحالية للإجابة الدقيقة"
+- عالية: النص صريح
+- متوسطة: استنتاج جزئي
+- منخفضة: نص غير كافي
 `
 
 let cachedDocs: any[] | null = null
@@ -41,47 +31,44 @@ function loadLegalData() {
     'civil_full.json'
   )
 
-  const file = fs.readFileSync(filePath, 'utf-8')
-  cachedDocs = JSON.parse(file)
-
+  cachedDocs = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
   return cachedDocs
 }
 
+/**
+ * يحاول يستخدم Vector Search لو موجود
+ */
+async function tryVectorSearch(query: string) {
+  try {
+    const mod = await import('@/lib/search')
+    if (mod?.searchLegal) {
+      const results = await mod.searchLegal(query, 5)
+
+      if (results?.length) {
+        return {
+          matches: results.map((r: any) => ({
+            id: r.id,
+            text: r.text,
+          })),
+          mode: 'vector',
+        }
+      }
+    }
+  } catch (e) {
+    // تجاهل أي فشل
+  }
+
+  return null
+}
+
+/**
+ * Fallback search الحالي عندك
+ */
 function extractArticleNumbers(query: string): number[] {
   const numbers: number[] = []
 
-  const enMatches = query.matchAll(/مادة\s*(\d+)/g)
-  for (const m of enMatches) {
-    numbers.push(parseInt(m[1]))
-  }
-
-  const arMap: Record<string, string> = {
-    '٠': '0',
-    '١': '1',
-    '٢': '2',
-    '٣': '3',
-    '٤': '4',
-    '٥': '5',
-    '٦': '6',
-    '٧': '7',
-    '٨': '8',
-    '٩': '9',
-  }
-
-  const arMatches = query.matchAll(/مادة\s*([٠-٩]+)/g)
-  for (const m of arMatches) {
-    const converted = m[1]
-      .split('')
-      .map((c) => arMap[c] || c)
-      .join('')
-
-    numbers.push(parseInt(converted))
-  }
-
-  const shortMatches = query.matchAll(/م[.\s]+(\d+)/g)
-  for (const m of shortMatches) {
-    numbers.push(parseInt(m[1]))
-  }
+  const matches = query.matchAll(/مادة\s*(\d+)/g)
+  for (const m of matches) numbers.push(parseInt(m[1]))
 
   return [...new Set(numbers)]
 }
@@ -89,84 +76,79 @@ function extractArticleNumbers(query: string): number[] {
 function searchDocs(docs: any[], query: string) {
   const q = query.toLowerCase()
 
-  // 1. Article ID search (highest priority)
+  // 1. Article ID search
   const articleNums = extractArticleNumbers(query)
-  if (articleNums.length > 0) {
-    const byId = docs.filter((doc) => articleNums.includes(doc.id))
-    if (byId.length > 0) {
-      return { matches: byId, mode: 'by_id' as const }
-    }
+  if (articleNums.length) {
+    const byId = docs.filter(d => articleNums.includes(d.id))
+    if (byId.length) return { matches: byId, mode: 'by_id' }
   }
 
   // 2. Keyword search
-  const keywords = docs.filter((doc) =>
-    doc.keywords?.some((kw: string) => q.includes(kw))
+  const keyword = docs.filter(d =>
+    d.keywords?.some((k: string) => q.includes(k))
   )
 
-  if (keywords.length > 0) {
-    return { matches: keywords.slice(0, 6), mode: 'keyword' as const }
+  if (keyword.length) {
+    return { matches: keyword.slice(0, 6), mode: 'keyword' }
   }
 
-  // 3. Text search fallback
-  const words = q.split(' ').filter((w) => w.length > 3)
+  // 3. Text fallback
+  const words = q.split(' ').filter(w => w.length > 3)
 
-  const textMatch = docs.filter((doc) => {
-    const text = doc.text.toLowerCase()
-    return words.some((w) => text.includes(w))
-  })
+  const text = docs.filter(d =>
+    words.some(w => d.text.toLowerCase().includes(w))
+  )
 
-  if (textMatch.length > 0) {
-    return { matches: textMatch.slice(0, 5), mode: 'text' as const }
+  return {
+    matches: text.slice(0, 5),
+    mode: text.length ? 'text' : 'fallback',
   }
-
-  // 4. Last fallback
-  return { matches: docs.slice(0, 3), mode: 'fallback' as const }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const apiKey = process.env.GROQ_API_KEY
+    const { messages } = await req.json()
 
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: 'GROQ_API_KEY غير موجود' },
-        { status: 500 }
-      )
+    if (!messages?.length) {
+      return NextResponse.json({ error: 'no messages' }, { status: 400 })
     }
 
-    const body = await req.json()
-    const messages = body?.messages
-
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return NextResponse.json(
-        { error: 'لا توجد رسائل صالحة' },
-        { status: 400 }
-      )
-    }
-
-    const lastMessage = messages[messages.length - 1]?.content || ''
+    const lastMessage = messages[messages.length - 1].content
 
     const legalDocs = loadLegalData()
-    const { matches, mode } = searchDocs(legalDocs!, lastMessage)
+
+    // 1. حاول Vector Search الأول
+    const vectorResult = await tryVectorSearch(lastMessage)
+
+    let matches
+    let mode = 'keyword'
+
+    if (vectorResult) {
+      matches = vectorResult.matches
+      mode = vectorResult.mode
+    } else {
+      const result = searchDocs(legalDocs, lastMessage)
+      matches = result.matches
+      mode = result.mode
+    }
 
     const context = matches
-      .map((doc: any) => {
-        return `ID: ${doc.id}\nTEXT: ${doc.text}`
-      })
+      .map((d: any) => `ID: ${d.id}\nTEXT: ${d.text}`)
       .join('\n\n---\n\n')
 
-    const groq = new Groq({ apiKey })
+    const groq = new Groq({
+      apiKey: process.env.GROQ_API_KEY!,
+    })
 
     const completion = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
       temperature: 0.2,
-      max_tokens: 1200,
       messages: [
         {
           role: 'system',
           content: `${SYSTEM_PROMPT}
 
-📚 النصوص القانونية المتاحة:
+📚 النصوص القانونية:
 ${context}
           `,
         },
@@ -179,22 +161,18 @@ ${context}
 
     const content =
       completion.choices?.[0]?.message?.content?.trim() ||
-      'لم يتم الحصول على رد.'
+      'لا يوجد رد'
 
     return NextResponse.json({
       content,
       mode,
-      sources: matches.map((m) => ({
-        id: m.id,
-      })),
+      sources: matches.map(m => ({ id: m.id })),
       success: true,
     })
   } catch (error: any) {
-    console.error('Groq API Error:', error)
-
     return NextResponse.json(
       {
-        error: 'حدث خطأ في الاتصال بالذكاء الاصطناعي',
+        error: 'server error',
         details:
           process.env.NODE_ENV === 'development'
             ? error?.message
