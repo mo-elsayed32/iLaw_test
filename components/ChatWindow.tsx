@@ -121,44 +121,42 @@ function CopyButton({ text }: { text: string }) {
 }
 
 function AIMessage({ msg, index }: { msg: Message; index: number }) {
-  const parsed = parseResponse(msg.content)
-
   return (
     <div
       className="flex justify-end animate-fadeIn"
       style={{ animationDelay: `${index * 50}ms` }}
     >
-      {parsed ? (
-        <div className="bg-white dark:bg-[#2a2a2a] rounded-2xl max-w-[92%] shadow-sm border border-gray-100 dark:border-white/10 overflow-hidden">
-          {parsed.map((section, i) => (
-            <div
-              key={section.title}
-              className={`px-4 py-3 ${i < parsed.length - 1 ? 'border-b border-gray-100 dark:border-white/10' : ''}`}
-            >
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <span className="text-sm">{section.icon}</span>
-                <span className={`text-xs font-bold tracking-wide ${section.color}`}>
-                  {section.title}
-                </span>
-              </div>
-              {section.title === 'درجة الثقة' ? (
-                <ConfidenceBadge text={section.content} />
-              ) : (
-                <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed">
-                  {section.content}
-                </p>
-              )}
-            </div>
-          ))}
-          <div className="px-4 py-2 border-t border-gray-100 dark:border-white/10 flex gap-1">
-            <CopyButton text={msg.content} />
+      <div className="bg-white dark:bg-[#2a2a2a] rounded-2xl max-w-[92%] shadow-sm border border-gray-100 dark:border-white/10 overflow-hidden">
+        
+        {/* Answer */}
+        <div className="px-4 py-3">
+          <div className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">
+            {msg.content}
           </div>
         </div>
-      ) : (
-        <div className="bg-white dark:bg-[#2a2a2a] rounded-2xl px-4 py-3 max-w-[92%] text-sm text-gray-800 dark:text-gray-200 shadow-sm border border-gray-100 dark:border-white/10">
-          {msg.content}
+
+        {/* Sources (لو موجودة) */}
+        {msg.sources?.length > 0 && (
+          <div className="px-4 py-2 border-t border-gray-100 dark:border-white/10">
+            <div className="text-xs text-gray-500 mb-1">المواد القانونية:</div>
+            <div className="flex flex-wrap gap-2">
+              {msg.sources.map((s: any) => (
+                <span
+                  key={s.id}
+                  className="px-2 py-1 bg-gray-100 dark:bg-white/10 rounded text-xs"
+                >
+                  مادة {s.id}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Copy */}
+        <div className="px-4 py-2 border-t border-gray-100 dark:border-white/10 flex gap-1">
+          <CopyButton text={msg.content} />
         </div>
-      )}
+      </div>
     </div>
   )
 }
