@@ -14,15 +14,15 @@ interface LegalResponse {
   note: string | null
 }
 
-// ── SMART SYSTEM PROMPT ───────────────────────────────────
+// ── SYSTEM PROMPT (FIXED + STRICT OUTPUT STYLE) ───────────
 const SYSTEM_PROMPT = `
 أنت مساعد قانوني متخصص في القانون المدني المصري.
 
-⚠️ أعد الرد بصيغة JSON فقط — بدون أي نص خارج JSON.
+⚠️ مهم جدًا: الرد يجب أن يكون JSON فقط بدون أي نص خارج JSON.
 
 الشكل المطلوب:
 {
-  "answer": "الإجابة القانونية",
+  "answer": "النص القانوني",
   "legalSources": [101, 102],
   "confidence": {
     "level": "high | medium | low",
@@ -31,30 +31,35 @@ const SYSTEM_PROMPT = `
   "note": "ملاحظة أو null"
 }
 
-🔥 قواعد الذكاء في الإجابة:
+🚨 قواعد صارمة جدًا لكتابة answer:
 
-1. طول الإجابة يعتمد على السؤال:
-   - إذا السؤال عام → إجابة موسعة مفصلة (شرح + تقسيم + نقاط)
-   - إذا السؤال محدد → إجابة مركزة مباشرة لكن دقيقة
+1. ممنوع استخدام أي Markdown نهائيًا:
+   (#, ##, -, *, **, أو أي تنسيق)
 
-2. داخل answer:
-   - استخدم عناوين واضحة عند الحاجة
-   - استخدم نقاط bullet points
-   - اشرح المفاهيم القانونية بشكل مبسط لكن عميق
-   - إذا فيه مقارنة → اشرح كل عنصر ثم الفرق
+2. اكتب النص بشكل قانوني احترافي باستخدام:
+   - فقرات
+   - أسطر جديدة فقط
+   - أو ترقيم رقمي 1، 2، 3
 
-3. legalSources:
+3. لا تستخدم عناوين Markdown إطلاقًا
+
+4. اكتب بأسلوب قانوني واضح ومترابط
+
+5. لو السؤال عام:
+   - اشرح بتفصيل
+   - قسّم الإجابة منطقيًا
+
+6. لو السؤال محدد:
+   - ركّز على الإجابة المباشرة مع شرح كافي
+
+7. legalSources:
    - فقط من النصوص المرفقة
-   - لا تخترع أرقام مواد
+   - ممنوع الاختلاق
 
-4. confidence:
-   - high: نص صريح مباشر
-   - medium: استنتاج منطقي
-   - low: نقص معلومات
-
-5. note:
-   - اكتبها فقط لو في تحذير أو نقص معلومات
-   - غير كده = null
+8. confidence:
+   - high = نص صريح
+   - medium = استنتاج
+   - low = نقص معلومات
 `
 
 // ── Data Loading ──────────────────────────────────────────
@@ -128,7 +133,14 @@ function searchDocs(docs: any[], query: string) {
   }
 }
 
-// ── Parser ────────────────────────────────────────────────
+// ── LLM Response Parser + POST CLEANING ───────────────────
+function stripMarkdown(text: string) {
+  return text
+    .replace(/[#*_>`-]/g, '') // remove markdown symbols
+    .replace(/\n{3,}/g, '\n\n') // normalize spacing
+    .trim()
+}
+
 function parseLLMResponse(raw: string, matchedIds: number[]): LegalResponse {
   try {
     const cleaned = raw
@@ -151,7 +163,7 @@ function parseLLMResponse(raw: string, matchedIds: number[]): LegalResponse {
         : 'low'
 
     return {
-      answer: parsed.answer ?? raw,
+      answer: stripMarkdown(parsed.answer ?? raw), // 🔥 important fix
       legalSources: validSources,
       confidence: {
         level,
@@ -164,7 +176,7 @@ function parseLLMResponse(raw: string, matchedIds: number[]): LegalResponse {
     }
   } catch {
     return {
-      answer: raw,
+      answer: stripMarkdown(raw),
       legalSources: [],
       confidence: {
         level: 'low',
@@ -207,7 +219,10 @@ export async function POST(req: NextRequest) {
       .map(d => `ID: ${d.id}\nTEXT: ${d.text}`)
       .join('\n\n---\n\n')
 
-    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! })
+    const apiKey = process.env.GROQ_API_KEY
+    if (!apiKey) throw new Error('Missing GROQ_API_KEY')
+
+    const groq = new Groq({ apiKey })
 
     const completion = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
@@ -238,6 +253,8 @@ ${context}`,
       success: true,
     })
   } catch (error: any) {
+    console.error('ROUTE ERROR:', error)
+
     return NextResponse.json(
       {
         error: 'server error',
