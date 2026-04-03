@@ -14,44 +14,62 @@ interface LegalResponse {
   note: string | null
 }
 
-// ── System Prompt ─────────────────────────────────────────
-const SYSTEM_PROMPT = `أنت مساعد قانوني متخصص في القانون المدني المصري.
-مهمتك: تحليل السؤال القانوني اعتماداً فقط على النصوص المرفقة.
+// ── SMART SYSTEM PROMPT ───────────────────────────────────
+const SYSTEM_PROMPT = `
+أنت مساعد قانوني متخصص في القانون المدني المصري.
 
-⚠️ أعد الرد بصيغة JSON فقط — لا تضف أي نص خارج الـ JSON أبداً.
+⚠️ أعد الرد بصيغة JSON فقط — بدون أي نص خارج JSON.
 
-الشكل المطلوب حرفياً:
+الشكل المطلوب:
 {
-  "answer": "الإجابة القانونية الكاملة",
+  "answer": "الإجابة القانونية",
   "legalSources": [101, 102],
   "confidence": {
-    "level": "high",
-    "reason": "سبب درجة الثقة"
+    "level": "high | medium | low",
+    "reason": "سبب التقييم"
   },
-  "note": "ملاحظة إضافية أو null"
+  "note": "ملاحظة أو null"
 }
 
-مقياس الثقة:
-- high: النص القانوني صريح ومباشر
-- medium: استنتاج جزئي من النصوص
-- low: النصوص غير كافية للإجابة
+🔥 قواعد الذكاء في الإجابة:
 
-قواعد صارمة:
-1. legalSources: أرقام المواد من النصوص المرفقة فقط — لا تخترع أرقاماً
-2. إذا كانت النصوص غير كافية، اكتب ذلك في answer وضع level: "low"
-3. note يكون null إذا لم يكن هناك ملاحظة مهمة`
+1. طول الإجابة يعتمد على السؤال:
+   - إذا السؤال عام → إجابة موسعة مفصلة (شرح + تقسيم + نقاط)
+   - إذا السؤال محدد → إجابة مركزة مباشرة لكن دقيقة
+
+2. داخل answer:
+   - استخدم عناوين واضحة عند الحاجة
+   - استخدم نقاط bullet points
+   - اشرح المفاهيم القانونية بشكل مبسط لكن عميق
+   - إذا فيه مقارنة → اشرح كل عنصر ثم الفرق
+
+3. legalSources:
+   - فقط من النصوص المرفقة
+   - لا تخترع أرقام مواد
+
+4. confidence:
+   - high: نص صريح مباشر
+   - medium: استنتاج منطقي
+   - low: نقص معلومات
+
+5. note:
+   - اكتبها فقط لو في تحذير أو نقص معلومات
+   - غير كده = null
+`
 
 // ── Data Loading ──────────────────────────────────────────
 let cachedDocs: any[] | null = null
 
 function loadLegalData() {
   if (cachedDocs) return cachedDocs
+
   const filePath = path.join(
     process.cwd(),
     'data',
     'civil_code',
     'civil_full.json'
   )
+
   cachedDocs = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
   return cachedDocs
 }
@@ -64,7 +82,10 @@ async function tryVectorSearch(query: string) {
       const results = await mod.searchLegal(query, 5)
       if (results?.length) {
         return {
-          matches: results.map((r: any) => ({ id: r.id, text: r.text })),
+          matches: results.map((r: any) => ({
+            id: r.id,
+            text: r.text,
+          })),
           mode: 'vector',
         }
       }
@@ -107,7 +128,7 @@ function searchDocs(docs: any[], query: string) {
   }
 }
 
-// ── LLM Response Parser ───────────────────────────────────
+// ── Parser ────────────────────────────────────────────────
 function parseLLMResponse(raw: string, matchedIds: number[]): LegalResponse {
   try {
     const cleaned = raw
@@ -118,39 +139,43 @@ function parseLLMResponse(raw: string, matchedIds: number[]): LegalResponse {
 
     const parsed = JSON.parse(cleaned)
 
-    if (typeof parsed.answer !== 'string') throw new Error('missing answer')
-
     const validSources: number[] = Array.isArray(parsed.legalSources)
       ? parsed.legalSources.filter(
           (id: any) => typeof id === 'number' && matchedIds.includes(id)
         )
       : []
 
-    const level = ['high', 'medium', 'low'].includes(parsed.confidence?.level)
-      ? parsed.confidence.level
-      : 'low'
+    const level =
+      ['high', 'medium', 'low'].includes(parsed.confidence?.level)
+        ? parsed.confidence.level
+        : 'low'
 
     return {
-      answer: parsed.answer,
+      answer: parsed.answer ?? raw,
       legalSources: validSources,
       confidence: {
         level,
         reason: String(parsed.confidence?.reason ?? ''),
       },
       note:
-        parsed.note && parsed.note !== 'null' ? String(parsed.note) : null,
+        parsed.note && parsed.note !== 'null'
+          ? String(parsed.note)
+          : null,
     }
   } catch {
     return {
       answer: raw,
       legalSources: [],
-      confidence: { level: 'low', reason: 'تعذّر تحليل الرد' },
+      confidence: {
+        level: 'low',
+        reason: 'تعذّر تحليل الرد',
+      },
       note: null,
     }
   }
 }
 
-// ── Main Handler ──────────────────────────────────────────
+// ── MAIN ROUTE ───────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
     const { messages } = await req.json()
@@ -163,6 +188,7 @@ export async function POST(req: NextRequest) {
     const legalDocs = loadLegalData()
 
     const vectorResult = await tryVectorSearch(lastMessage)
+
     let matches: any[]
     let mode: string
 
@@ -175,21 +201,24 @@ export async function POST(req: NextRequest) {
       mode = result.mode
     }
 
-    const matchedIds = matches.map((m: any) => Number(m.id))
+    const matchedIds = matches.map(m => Number(m.id))
 
     const context = matches
-      .map((d: any) => `ID: ${d.id}\nTEXT: ${d.text}`)
+      .map(d => `ID: ${d.id}\nTEXT: ${d.text}`)
       .join('\n\n---\n\n')
 
     const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! })
 
     const completion = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
-      temperature: 0.1,
+      temperature: 0.2,
       messages: [
         {
           role: 'system',
-          content: `${SYSTEM_PROMPT}\n\n📚 النصوص القانونية المرفقة:\n${context}`,
+          content: `${SYSTEM_PROMPT}
+
+📚 النصوص القانونية:
+${context}`,
         },
         { role: 'user', content: lastMessage },
       ],
@@ -200,11 +229,12 @@ export async function POST(req: NextRequest) {
 
     const structured = parseLLMResponse(rawContent, matchedIds)
 
-    // ✅ FINAL FIX: return structured object directly (no JSON.stringify)
     return NextResponse.json({
       data: structured,
       mode,
-      sources: structured.legalSources.map(id => ({ id: String(id) })),
+      sources: structured.legalSources.map(id => ({
+        id: String(id),
+      })),
       success: true,
     })
   } catch (error: any) {
@@ -219,4 +249,4 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     )
   }
-      }
+}
