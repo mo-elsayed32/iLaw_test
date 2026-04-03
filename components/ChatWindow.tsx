@@ -6,7 +6,6 @@ type Props = {
   loading: boolean
 }
 
-// ── Type (يطابق output الـ route) ─────────────────────────
 interface LegalResponse {
   answer: string
   legalSources: number[]
@@ -17,12 +16,24 @@ interface LegalResponse {
   note: string | null
 }
 
-// ── JSON Parser ───────────────────────────────────────────
-function parseLegalResponse(content: string): LegalResponse | null {
+// ── SAFE JSON PARSER (FIXED) ─────────────────────────────
+function parseLegalResponse(content: string | null | undefined): LegalResponse | null {
+  if (!content || typeof content !== 'string') return null
+
   try {
-    const parsed = JSON.parse(content)
-    if (typeof parsed.answer === 'string' && parsed.confidence) return parsed
-    return null
+    const cleaned = content
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim()
+
+    if (!cleaned || cleaned === 'undefined') return null
+
+    const parsed = JSON.parse(cleaned)
+
+    if (!parsed || typeof parsed.answer !== 'string') return null
+
+    return parsed
   } catch {
     return null
   }
@@ -52,6 +63,7 @@ function ConfidenceBadge({
       color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
     },
   }
+
   const c = config[level as keyof typeof config] ?? config.low
 
   return (
@@ -71,9 +83,11 @@ function ConfidenceBadge({
 // ── Copy Button ───────────────────────────────────────────
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
+
   return (
     <button
       onClick={() => {
+        if (!text) return
         navigator.clipboard.writeText(text)
         setCopied(true)
         setTimeout(() => setCopied(false), 2000)
@@ -85,7 +99,7 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-// ── Structured Render ─────────────────────────────────────
+// ── Structured Message ───────────────────────────────────
 function StructuredMessage({
   data,
   msg,
@@ -96,40 +110,24 @@ function StructuredMessage({
   return (
     <div className="bg-white dark:bg-[#2a2a2a] rounded-2xl max-w-[92%] shadow-sm border border-gray-100 dark:border-white/10 overflow-hidden">
 
-      {/* Answer */}
       <div className="px-4 py-3 bg-blue-50 dark:bg-white/5">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-xs font-semibold text-[#1a2d5a] dark:text-blue-300">
-            ⚖️ الإجابة
-          </span>
-        </div>
-        <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">
+        <p className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
           {data.answer}
         </p>
       </div>
 
-      {/* Sources */}
-      {msg.sources && msg.sources.length > 0 && (
-        <div className="px-4 py-3 border-t border-gray-100 dark:border-white/10 bg-blue-50/50 dark:bg-blue-900/20">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs font-semibold text-[#3a6ea8] dark:text-blue-300">
-              📋 المواد القانونية
-            </span>
-          </div>
+      {msg.sources?.length ? (
+        <div className="px-4 py-3 border-t border-gray-100 dark:border-white/10">
           <div className="flex flex-wrap gap-2">
             {msg.sources.map(s => (
-              <span
-                key={s.id}
-                className="px-2 py-1 bg-white dark:bg-white/10 border border-blue-200 dark:border-blue-700 rounded text-xs text-blue-700 dark:text-blue-300 font-medium"
-              >
+              <span key={s.id} className="text-xs px-2 py-1 rounded bg-blue-100 dark:bg-blue-900/30">
                 مادة {s.id}
               </span>
             ))}
           </div>
         </div>
-      )}
+      ) : null}
 
-      {/* Confidence */}
       <div className="px-4 py-3 border-t border-gray-100 dark:border-white/10">
         <ConfidenceBadge
           level={data.confidence.level}
@@ -137,21 +135,14 @@ function StructuredMessage({
         />
       </div>
 
-      {/* Note */}
       {data.note && (
-        <div className="px-4 py-3 border-t border-gray-100 dark:border-white/10 bg-amber-50 dark:bg-amber-900/20">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
-              ⚠️ ملاحظة للمحامي
-            </span>
-          </div>
-          <p className="text-xs text-amber-700 dark:text-amber-300 leading-relaxed">
+        <div className="px-4 py-3 border-t border-gray-100 dark:border-white/10">
+          <p className="text-xs text-amber-600 dark:text-amber-300">
             {data.note}
           </p>
         </div>
       )}
 
-      {/* Copy */}
       <div className="px-4 py-2 border-t border-gray-100 dark:border-white/10">
         <CopyButton text={data.answer} />
       </div>
@@ -159,23 +150,18 @@ function StructuredMessage({
   )
 }
 
-// ── Plain Text Fallback ───────────────────────────────────
+// ── Plain Message ─────────────────────────────────────────
 function PlainMessage({ msg }: { msg: Message }) {
   return (
-    <div className="bg-white dark:bg-[#2a2a2a] rounded-2xl max-w-[92%] shadow-sm border border-gray-100 dark:border-white/10 overflow-hidden">
-      <div className="px-4 py-3">
-        <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">
-          {msg.content}
-        </p>
-      </div>
-      <div className="px-4 py-2 border-t border-gray-100 dark:border-white/10">
-        <CopyButton text={msg.content} />
-      </div>
+    <div className="bg-white dark:bg-[#2a2a2a] rounded-2xl max-w-[92%] p-4">
+      <p className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
+        {msg.content}
+      </p>
     </div>
   )
 }
 
-// ── AI Message Wrapper ────────────────────────────────────
+// ── AI Message ────────────────────────────────────────────
 function AIMessage({ msg, index }: { msg: Message; index: number }) {
   const structured = parseLegalResponse(msg.content)
 
@@ -193,7 +179,7 @@ function AIMessage({ msg, index }: { msg: Message; index: number }) {
   )
 }
 
-// ── Main Component ────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────
 export default function ChatWindow({ messages, loading }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -203,51 +189,23 @@ export default function ChatWindow({ messages, loading }: Props) {
 
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
-      {messages.length === 0 && (
-        <div className="flex flex-col items-center justify-center h-full gap-3 mt-32 animate-fadeIn">
-          <div className="text-6xl animate-pulse">⚖️</div>
-          <h1 className="text-2xl font-bold text-[#1a2d5a] dark:text-white">
-            Hi, I'm iLaw.
-          </h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">
-            How can I help you today?
-          </p>
-        </div>
-      )}
-
       {messages.map((msg, i) => {
         if (msg.role === 'user') {
           return (
-            <div
-              key={msg.id}
-              className="flex justify-start animate-fadeIn"
-              style={{ animationDelay: `${i * 50}ms` }}
-            >
-              <div className="bg-[#1a2d5a] text-white px-4 py-3 rounded-[18px_18px_18px_4px] max-w-[80%] text-sm leading-relaxed shadow-sm">
+            <div key={msg.id} className="flex justify-start">
+              <div className="bg-[#1a2d5a] text-white px-4 py-3 rounded-lg max-w-[80%]">
                 {msg.content}
               </div>
             </div>
           )
         }
+
         return <AIMessage key={msg.id} msg={msg} index={i} />
       })}
 
       {loading && (
-        <div className="flex justify-end animate-fadeIn">
-          <div className="bg-white dark:bg-[#2a2a2a] rounded-2xl px-5 py-4 shadow-sm border border-gray-100 dark:border-white/10">
-            <div className="flex items-center gap-3">
-              <div className="flex gap-1">
-                {[0, 150, 300].map(delay => (
-                  <span
-                    key={delay}
-                    className="w-2 h-2 bg-[#1a2d5a] dark:bg-blue-400 rounded-full animate-bounce"
-                    style={{ animationDelay: `${delay}ms` }}
-                  />
-                ))}
-              </div>
-              <span className="text-xs text-gray-400">iLaw يحلل سؤالك...</span>
-            </div>
-          </div>
+        <div className="flex justify-end">
+          <div className="text-xs text-gray-400">iLaw يحلل...</div>
         </div>
       )}
 
