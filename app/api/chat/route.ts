@@ -56,7 +56,7 @@ function loadLegalData() {
   return cachedDocs
 }
 
-// ── Vector Search (optional) ──────────────────────────────
+// ── Vector Search ─────────────────────────────────────────
 async function tryVectorSearch(query: string) {
   try {
     const mod = await import('@/lib/search')
@@ -100,6 +100,7 @@ function searchDocs(docs: any[], query: string) {
   const text = docs.filter(d =>
     words.some(w => d.text.toLowerCase().includes(w))
   )
+
   return {
     matches: text.slice(0, 5),
     mode: text.length ? 'text' : 'fallback',
@@ -126,7 +127,7 @@ function parseLLMResponse(raw: string, matchedIds: number[]): LegalResponse {
       : []
 
     const level = ['high', 'medium', 'low'].includes(parsed.confidence?.level)
-      ? (parsed.confidence.level as 'high' | 'medium' | 'low')
+      ? parsed.confidence.level
       : 'low'
 
     return {
@@ -137,9 +138,7 @@ function parseLLMResponse(raw: string, matchedIds: number[]): LegalResponse {
         reason: String(parsed.confidence?.reason ?? ''),
       },
       note:
-        parsed.note && parsed.note !== 'null' && parsed.note !== null
-          ? String(parsed.note)
-          : null,
+        parsed.note && parsed.note !== 'null' ? String(parsed.note) : null,
     }
   } catch {
     return {
@@ -201,8 +200,9 @@ export async function POST(req: NextRequest) {
 
     const structured = parseLLMResponse(rawContent, matchedIds)
 
+    // ✅ FINAL FIX: return structured object directly (no JSON.stringify)
     return NextResponse.json({
-      content: JSON.stringify(structured),
+      data: structured,
       mode,
       sources: structured.legalSources.map(id => ({ id: String(id) })),
       success: true,
@@ -219,4 +219,4 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     )
   }
-}
+      }
