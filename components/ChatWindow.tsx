@@ -7,7 +7,7 @@ type Props = {
   loading: boolean
 }
 
-// ── SAFE JSON PARSER (FIXED) ─────────────────────────────
+// ── SAFE JSON PARSER ──────────────────────────────────────
 function parseLegalResponse(content: string | null | undefined): LegalResponse | null {
   if (!content || typeof content !== 'string') return null
 
@@ -31,23 +31,15 @@ function parseLegalResponse(content: string | null | undefined): LegalResponse |
 }
 
 // ── Confidence Badge ──────────────────────────────────────
-function ConfidenceBadge({
-  level,
-  reason,
-}: {
-  level: string
-  reason: string
-}) {
+function ConfidenceBadge({ level, reason }: { level: string; reason: string }) {
   const config = {
     high: {
       label: 'ثقة عالية',
-      color:
-        'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
+      color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
     },
     medium: {
       label: 'ثقة متوسطة',
-      color:
-        'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+      color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
     },
     low: {
       label: 'ثقة منخفضة',
@@ -63,9 +55,7 @@ function ConfidenceBadge({
         📊 {c.label}
       </span>
       {reason && (
-        <span className="text-xs text-gray-500 dark:text-gray-400">
-          {reason}
-        </span>
+        <span className="text-xs text-gray-500 dark:text-gray-400">{reason}</span>
       )}
     </div>
   )
@@ -90,17 +80,20 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-// ── Structured Message ───────────────────────────────────
-function StructuredMessage({
-  data,
-  msg,
-}: {
-  data: LegalResponse
-  msg: Message
-}) {
+// ── Error Message ─────────────────────────────────────────
+function ErrorMessage({ message }: { message: string }) {
+  return (
+    <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl max-w-[92%] px-4 py-3 flex items-start gap-2">
+      <span className="text-red-500 text-sm mt-0.5">⚠️</span>
+      <p className="text-sm text-red-700 dark:text-red-300">{message}</p>
+    </div>
+  )
+}
+
+// ── Structured Message ────────────────────────────────────
+function StructuredMessage({ data, msg }: { data: LegalResponse; msg: Message }) {
   return (
     <div className="bg-white dark:bg-[#2a2a2a] rounded-2xl max-w-[92%] shadow-sm border border-gray-100 dark:border-white/10 overflow-hidden">
-
       <div className="px-4 py-3 bg-blue-50 dark:bg-white/5">
         <p className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
           {data.answer}
@@ -120,17 +113,12 @@ function StructuredMessage({
       ) : null}
 
       <div className="px-4 py-3 border-t border-gray-100 dark:border-white/10">
-        <ConfidenceBadge
-          level={data.confidence.level}
-          reason={data.confidence.reason}
-        />
+        <ConfidenceBadge level={data.confidence.level} reason={data.confidence.reason} />
       </div>
 
       {data.note && (
         <div className="px-4 py-3 border-t border-gray-100 dark:border-white/10">
-          <p className="text-xs text-amber-600 dark:text-amber-300">
-            {data.note}
-          </p>
+          <p className="text-xs text-amber-600 dark:text-amber-300">{data.note}</p>
         </div>
       )}
 
@@ -154,13 +142,19 @@ function PlainMessage({ msg }: { msg: Message }) {
 
 // ── AI Message ────────────────────────────────────────────
 function AIMessage({ msg, index }: { msg: Message; index: number }) {
+  // ── عرض رسالة الخطأ ──────────────────────────────────
+  if (msg.error) {
+    return (
+      <div className="flex justify-end animate-fadeIn" style={{ animationDelay: `${index * 50}ms` }}>
+        <ErrorMessage message={msg.error} />
+      </div>
+    )
+  }
+
   const structured = parseLegalResponse(msg.content)
 
   return (
-    <div
-      className="flex justify-end animate-fadeIn"
-      style={{ animationDelay: `${index * 50}ms` }}
-    >
+    <div className="flex justify-end animate-fadeIn" style={{ animationDelay: `${index * 50}ms` }}>
       {structured ? (
         <StructuredMessage data={structured} msg={msg} />
       ) : (
@@ -190,7 +184,6 @@ export default function ChatWindow({ messages, loading }: Props) {
             </div>
           )
         }
-
         return <AIMessage key={msg.id} msg={msg} index={i} />
       })}
 
