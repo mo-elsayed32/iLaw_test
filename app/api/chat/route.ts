@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
 
     let structured
     try {
-      structured = await queryLegalLLM(query, context, matchedIds)
+      structured = await queryLegalLLM(query, context, matchedIds, messages)
     } catch (e) {
       throw new AppError('LLM_ERROR', String(e))
     }
@@ -55,7 +55,6 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error('ROUTE ERROR:', error)
 
-    // AppError — خطأ متوقع عندنا رسالة للمستخدم
     if (error instanceof AppError) {
       return NextResponse.json(
         {
@@ -67,7 +66,6 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // خطأ غير متوقع
     return NextResponse.json(
       {
         success: false,
