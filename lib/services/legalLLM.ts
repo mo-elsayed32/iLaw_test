@@ -55,16 +55,46 @@ function parseLLMResponse(raw: string, matchedIds: number[]): LegalResponse {
   }
 }
 
+// ── Build History for Groq ────────────────────────────────
+// رسائل الـ assistant فيها JSON — نستخرج الـ answer بس للسياق
+function buildHistory(
+  messages: Array<{ role: string; content: string }>
+): Array<{ role: 'user' | 'assistant'; content: string }> {
+  // كل الرسائل ماعدا الأخيرة (اللي هي السؤال الحالي)
+  const history = messages.slice(0, -1)
+
+  return history
+    .filter(m => m.role === 'user' || m.role === 'assistant')
+    .map(m => {
+      if (m.role === 'assistant') {
+        // استخرج الـ answer من JSON لو موجود
+        try {
+          const parsed = JSON.parse(m.content)
+          return {
+            role: 'assistant' as const,
+            content: parsed.answer ?? m.content,
+          }
+        } catch {
+          return { role: 'assistant' as const, content: m.content }
+        }
+      }
+      return { role: 'user' as const, content: m.content }
+    })
+}
+
 // ── Main Export ───────────────────────────────────────────
 export async function queryLegalLLM(
   query: string,
   context: string,
-  matchedIds: number[]
+  matchedIds: number[],
+  allMessages: Array<{ role: string; content: string }>
 ): Promise<LegalResponse> {
   const apiKey = process.env.GROQ_API_KEY
   if (!apiKey) throw new Error('Missing GROQ_API_KEY')
 
   const groq = new Groq({ apiKey })
+
+  const history = buildHistory(allMessages)
 
   const completion = await groq.chat.completions.create({
     model: 'llama-3.3-70b-versatile',
@@ -74,6 +104,7 @@ export async function queryLegalLLM(
         role: 'system',
         content: `${SYSTEM_PROMPT}\n\n📚 النصوص القانونية:\n${context}`,
       },
+      ...history,
       { role: 'user', content: query },
     ],
   })
