@@ -22,7 +22,6 @@ export default function Home() {
     }
 
     const updatedMessages = [...messages, userMsg]
-
     setMessages(updatedMessages)
     setLoading(true)
 
@@ -35,24 +34,40 @@ export default function Home() {
 
       const resData = await res.json()
 
-      // 🧠 حماية من undefined
-      const structured = resData?.data
-
-      const aiMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: structured ? JSON.stringify(structured) : '',
-        sources: resData.sources ?? [],
+      // ── حالة الخطأ من الـ API ──────────────────────────
+      if (!resData.success) {
+        setMessages(prev => [
+          ...prev,
+          {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: '',
+            error: resData.userMessage ?? 'حدث خطأ غير متوقع.',
+          },
+        ])
+        return
       }
 
-      setMessages(prev => [...prev, aiMsg])
-    } catch {
+      // ── حالة النجاح ───────────────────────────────────
       setMessages(prev => [
         ...prev,
         {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: 'حدث خطأ، يرجى المحاولة مرة أخرى.',
+          content: JSON.stringify(resData.data),
+          sources: resData.sources ?? [],
+        },
+      ])
+
+    } catch {
+      // ── خطأ في الشبكة ─────────────────────────────────
+      setMessages(prev => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: '',
+          error: 'تعذّر الاتصال بالخادم. تحقق من اتصالك بالإنترنت.',
         },
       ])
     } finally {
