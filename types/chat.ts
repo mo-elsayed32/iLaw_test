@@ -7,4 +7,5 @@ export type Message = {
   role: 'user' | 'assistant'
   content: string
   sources?: Source[]
+  error?: string
 }
